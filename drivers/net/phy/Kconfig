@@ -256,6 +256,12 @@ config MDIO_BCM_IPROC
 	  This module provides a driver for the MDIO busses found in the
 	  Broadcom iProc SoC's.
 
+config CS4321_PHY
+	tristate "Driver for Cortina CS4318 and CS4321 Ethernet PHYs"
+	help
+	  Currently supports the Cortina CS4318 and CS4321 10G Ethernet
+	  PHYs.
+
 endif # PHYLIB
 
 config MICREL_KS8995MA
