@@ -45,7 +45,7 @@ enum octeon_irq {
 	OCTEON_IRQ_USB0,
 	OCTEON_IRQ_USB1,
 #ifndef CONFIG_PCI_MSI
-	OCTEON_IRQ_LAST = 127
+	OCTEON_IRQ_LAST = 255
 #endif
 };
 
