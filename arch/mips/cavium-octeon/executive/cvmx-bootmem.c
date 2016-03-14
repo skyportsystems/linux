@@ -518,6 +518,22 @@ bootmem_free_done:
 
 }
 
+static int cvmx_bootmem_strcmp(char *s1, char *bs2, size_t n)
+{
+	char s2[n];
+	int i;
+	uint64_t x;
+	for (i = 0; i < n; i++) {
+		if ((i % 8) == 0)
+			x = *((uint64_t *) (bs2 + i));
+		s2[i] = x >> 56;
+		if (!s2[i])
+			break;
+		x <<= 8;
+	}
+	return strncmp(s1, s2, n);
+}
+
 struct cvmx_bootmem_named_block_desc *
 	cvmx_bootmem_phy_named_block_find(char *name, uint32_t flags)
 {
@@ -544,17 +560,18 @@ struct cvmx_bootmem_named_block_desc *
 	     named_block_array_ptr);
 #endif
 	if (cvmx_bootmem_desc->major_version == 3) {
+		uint32_t name_len = cvmx_bootmem_desc->named_block_name_len
+			- 1;
 		for (i = 0;
 		     i < cvmx_bootmem_desc->named_block_num_blocks; i++) {
-			if ((name && named_block_array_ptr[i].size
-			     && !strncmp(name, named_block_array_ptr[i].name,
-					 cvmx_bootmem_desc->named_block_name_len
-					 - 1))
-			    || (!name && !named_block_array_ptr[i].size)) {
+			struct cvmx_bootmem_named_block_desc *desc =
+				&(named_block_array_ptr[i]);
+			if ((name && desc->size &&
+			     !cvmx_bootmem_strcmp(name, desc->name, name_len))
+			    || (!name && !desc->size)) {
 				if (!(flags & CVMX_BOOTMEM_FLAG_NO_LOCKING))
 					cvmx_bootmem_unlock();
-
-				return &(named_block_array_ptr[i]);
+				return desc;
 			}
 		}
 	} else {
