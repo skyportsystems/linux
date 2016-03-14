@@ -126,6 +126,7 @@ typedef enum {
 } cvmx_cmd_queue_result_t;
 
 typedef struct {
+#ifdef __BIG_ENDIAN_BITFIELD
 	/* You have lock when this is your ticket */
 	uint8_t now_serving;
 	uint64_t unused1:24;
@@ -140,6 +141,22 @@ typedef struct {
 	uint64_t pool_size_m1:13;
 	/* Number of commands already used in buffer */
 	uint64_t index:13;
+#else
+	/* Maximum outstanding command words */
+	uint32_t max_depth;
+	/* You have lock when this is your ticket */
+	uint64_t unused1:24;
+	uint8_t now_serving;
+	/* Number of commands already used in buffer */
+	uint64_t index:13;
+	/* FPA buffer size in 64bit words minus 1 */
+	uint64_t pool_size_m1:13;
+	/* Top of command buffer pointer shifted 7 */
+	uint64_t unused2:6;
+	uint64_t base_ptr_div128:29;
+	/* FPA pool buffers come from */
+	uint64_t fpa_pool:3;
+#endif
 } __cvmx_cmd_queue_state_t;
 
 /**

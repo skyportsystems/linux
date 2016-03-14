@@ -294,28 +294,41 @@ static void __cvmx_pko_reset(void)
  */
 void cvmx_pko_shutdown(void)
 {
-	union cvmx_pko_mem_queue_ptrs config;
 	int queue;
 
 	cvmx_pko_disable();
 
-	for (queue = 0; queue < CVMX_PKO_MAX_OUTPUT_QUEUES; queue++) {
+	if (OCTEON_IS_MODEL(OCTEON_CN68XX)) {
+		union cvmx_pko_mem_iqueue_ptrs config;
 		config.u64 = 0;
-		config.s.tail = 1;
-		config.s.index = 0;
-		config.s.port = CVMX_PKO_MEM_QUEUE_PTRS_ILLEGAL_PID;
-		config.s.queue = queue & 0x7f;
-		config.s.qos_mask = 0;
-		config.s.buf_ptr = 0;
-		if (!OCTEON_IS_MODEL(OCTEON_CN3XXX)) {
-			union cvmx_pko_reg_queue_ptrs1 config1;
-			config1.u64 = 0;
-			config1.s.qid7 = queue >> 7;
-			cvmx_write_csr(CVMX_PKO_REG_QUEUE_PTRS1, config1.u64);
+		//for (queue = 0; queue < CVMX_PKO_MAX_OUTPUT_QUEUES; queue++) {
+		// HACK: cvmx_cmd_queue_shutdown() hangs with queue >= 48
+		for (queue = 0; queue < 48; queue++) {
+			config.s.qid = queue;
+			cvmx_write_csr(CVMX_PKO_MEM_IQUEUE_PTRS, config.u64);
+			cvmx_cmd_queue_shutdown(CVMX_CMD_QUEUE_PKO(queue));
 		}
-		cvmx_write_csr(CVMX_PKO_MEM_QUEUE_PTRS, config.u64);
-		cvmx_cmd_queue_shutdown(CVMX_CMD_QUEUE_PKO(queue));
+	} else {
+		union cvmx_pko_mem_queue_ptrs config;
+		for (queue = 0; queue < CVMX_PKO_MAX_OUTPUT_QUEUES; queue++) {
+			config.u64 = 0;
+			config.s.tail = 1;
+			config.s.index = 0;
+			config.s.port = CVMX_PKO_MEM_QUEUE_PTRS_ILLEGAL_PID;
+			config.s.queue = queue & 0x7f;
+			config.s.qos_mask = 0;
+			config.s.buf_ptr = 0;
+			if (!OCTEON_IS_MODEL(OCTEON_CN3XXX)) {
+				union cvmx_pko_reg_queue_ptrs1 config1;
+				config1.u64 = 0;
+				config1.s.qid7 = queue >> 7;
+				cvmx_write_csr(CVMX_PKO_REG_QUEUE_PTRS1, config1.u64);
+			}
+			cvmx_write_csr(CVMX_PKO_MEM_QUEUE_PTRS, config.u64);
+			cvmx_cmd_queue_shutdown(CVMX_CMD_QUEUE_PKO(queue));
+		}
 	}
+
 	__cvmx_pko_reset();
 }
 EXPORT_SYMBOL_GPL(cvmx_pko_shutdown);
