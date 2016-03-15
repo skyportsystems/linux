@@ -24,6 +24,7 @@ static const char *part_probe_types[] = {
 #ifdef CONFIG_MTD_REDBOOT_PARTS
 	"RedBoot",
 #endif
+	"ofpart",
 	NULL
 };
 
@@ -49,16 +50,24 @@ static void octeon_flash_map_write(struct map_info *map, const map_word datum,
 static void octeon_flash_map_copy_from(struct map_info *map, void *to,
 				       unsigned long from, ssize_t len)
 {
+	char *toc;
 	down(&octeon_bootbus_sem);
-	inline_map_copy_from(map, to, from, len);
+	/* Copy one byte at a time to avoid byte-swapping on LE host */
+	for (toc = to; len > 0; len--, toc++, from++) {
+		*toc = readb(map->virt + from);
+	}
 	up(&octeon_bootbus_sem);
 }
 
 static void octeon_flash_map_copy_to(struct map_info *map, unsigned long to,
 				     const void *from, ssize_t len)
 {
+	const char *fromc;
 	down(&octeon_bootbus_sem);
-	inline_map_copy_to(map, to, from, len);
+	/* Copy one byte at a time to avoid byte-swapping on LE host */
+	for (fromc = from; len > 0; len--, fromc++, to++) {
+		writeb(*fromc, map->virt + to);
+	}
 	up(&octeon_bootbus_sem);
 }
 
@@ -108,9 +117,11 @@ static int octeon_flash_probe(struct platform_device *pdev)
 		flash_map.copy_to = octeon_flash_map_copy_to;
 		mymtd = do_map_probe("cfi_probe", &flash_map);
 		if (mymtd) {
+			struct mtd_part_parser_data ppdata;
 			mymtd->owner = THIS_MODULE;
+			ppdata.of_node = np;
 			mtd_device_parse_register(mymtd, part_probe_types,
-						  NULL, NULL, 0);
+						  &ppdata, NULL, 0);
 		} else {
 			pr_err("Failed to register MTD device for flash\n");
 		}
