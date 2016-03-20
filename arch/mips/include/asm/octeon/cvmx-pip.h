@@ -386,22 +386,41 @@ static inline void cvmx_pip_get_port_status(uint64_t port_num, uint64_t clear,
 	pip_stat_ctl.s.rdclr = clear;
 	cvmx_write_csr(CVMX_PIP_STAT_CTL, pip_stat_ctl.u64);
 
-	stat0.u64 = cvmx_read_csr(CVMX_PIP_STAT0_PRTX(port_num));
-	stat1.u64 = cvmx_read_csr(CVMX_PIP_STAT1_PRTX(port_num));
-	stat2.u64 = cvmx_read_csr(CVMX_PIP_STAT2_PRTX(port_num));
-	stat3.u64 = cvmx_read_csr(CVMX_PIP_STAT3_PRTX(port_num));
-	stat4.u64 = cvmx_read_csr(CVMX_PIP_STAT4_PRTX(port_num));
-	stat5.u64 = cvmx_read_csr(CVMX_PIP_STAT5_PRTX(port_num));
-	stat6.u64 = cvmx_read_csr(CVMX_PIP_STAT6_PRTX(port_num));
-	stat7.u64 = cvmx_read_csr(CVMX_PIP_STAT7_PRTX(port_num));
-	stat8.u64 = cvmx_read_csr(CVMX_PIP_STAT8_PRTX(port_num));
-	stat9.u64 = cvmx_read_csr(CVMX_PIP_STAT9_PRTX(port_num));
-	pip_stat_inb_pktsx.u64 =
-	    cvmx_read_csr(CVMX_PIP_STAT_INB_PKTSX(port_num));
-	pip_stat_inb_octsx.u64 =
-	    cvmx_read_csr(CVMX_PIP_STAT_INB_OCTSX(port_num));
-	pip_stat_inb_errsx.u64 =
-	    cvmx_read_csr(CVMX_PIP_STAT_INB_ERRSX(port_num));
+	if (octeon_has_feature(OCTEON_FEATURE_PKND)) {
+		stat0.u64 = cvmx_read_csr(CVMX_PIP_STAT0_X(port_num));
+		stat1.u64 = cvmx_read_csr(CVMX_PIP_STAT1_X(port_num));
+		stat2.u64 = cvmx_read_csr(CVMX_PIP_STAT2_X(port_num));
+		stat3.u64 = cvmx_read_csr(CVMX_PIP_STAT3_X(port_num));
+		stat4.u64 = cvmx_read_csr(CVMX_PIP_STAT4_X(port_num));
+		stat5.u64 = cvmx_read_csr(CVMX_PIP_STAT5_X(port_num));
+		stat6.u64 = cvmx_read_csr(CVMX_PIP_STAT6_X(port_num));
+		stat7.u64 = cvmx_read_csr(CVMX_PIP_STAT7_X(port_num));
+		stat8.u64 = cvmx_read_csr(CVMX_PIP_STAT8_X(port_num));
+		stat9.u64 = cvmx_read_csr(CVMX_PIP_STAT9_X(port_num));
+		pip_stat_inb_pktsx.u64 =
+			cvmx_read_csr(CVMX_PIP_STAT_INB_PKTS_PKNDX(port_num));
+		pip_stat_inb_octsx.u64 =
+			cvmx_read_csr(CVMX_PIP_STAT_INB_OCTS_PKNDX(port_num));
+		pip_stat_inb_errsx.u64 =
+			cvmx_read_csr(CVMX_PIP_STAT_INB_ERRS_PKNDX(port_num));
+	} else {
+		stat0.u64 = cvmx_read_csr(CVMX_PIP_STAT0_PRTX(port_num));
+		stat1.u64 = cvmx_read_csr(CVMX_PIP_STAT1_PRTX(port_num));
+		stat2.u64 = cvmx_read_csr(CVMX_PIP_STAT2_PRTX(port_num));
+		stat3.u64 = cvmx_read_csr(CVMX_PIP_STAT3_PRTX(port_num));
+		stat4.u64 = cvmx_read_csr(CVMX_PIP_STAT4_PRTX(port_num));
+		stat5.u64 = cvmx_read_csr(CVMX_PIP_STAT5_PRTX(port_num));
+		stat6.u64 = cvmx_read_csr(CVMX_PIP_STAT6_PRTX(port_num));
+		stat7.u64 = cvmx_read_csr(CVMX_PIP_STAT7_PRTX(port_num));
+		stat8.u64 = cvmx_read_csr(CVMX_PIP_STAT8_PRTX(port_num));
+		stat9.u64 = cvmx_read_csr(CVMX_PIP_STAT9_PRTX(port_num));
+		pip_stat_inb_pktsx.u64 =
+			cvmx_read_csr(CVMX_PIP_STAT_INB_PKTSX(port_num));
+		pip_stat_inb_octsx.u64 =
+			cvmx_read_csr(CVMX_PIP_STAT_INB_OCTSX(port_num));
+		pip_stat_inb_errsx.u64 =
+			cvmx_read_csr(CVMX_PIP_STAT_INB_ERRSX(port_num));
+	}
 
 	status->dropped_octets = stat0.s.drp_octs;
 	status->dropped_packets = stat0.s.drp_pkts;
