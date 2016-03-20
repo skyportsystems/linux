@@ -120,11 +120,21 @@ static cvmx_helper_interface_mode_t __cvmx_get_mode_cn68xx(int interface)
 		/* QLM is disabled when QLM SPD is 15. */
 		if (qlm_cfg.s.qlm_spd == 15)
 			return CVMX_HELPER_INTERFACE_MODE_DISABLED;
-
-		if (qlm_cfg.s.qlm_cfg == 2)
+		else if (qlm_cfg.s.qlm_cfg == 7)
+			return CVMX_HELPER_INTERFACE_MODE_RXAUI;
+		else if (qlm_cfg.s.qlm_cfg == 2)
 			return CVMX_HELPER_INTERFACE_MODE_SGMII;
 		else if (qlm_cfg.s.qlm_cfg == 3)
 			return CVMX_HELPER_INTERFACE_MODE_XAUI;
+		else
+			return CVMX_HELPER_INTERFACE_MODE_DISABLED;
+	case 1:
+		qlm_cfg.u64 = cvmx_read_csr(CVMX_MIO_QLMX_CFG(0));
+		/* QLM is disabled when QLM SPD is 15. */
+		if (qlm_cfg.s.qlm_spd == 15)
+			return CVMX_HELPER_INTERFACE_MODE_DISABLED;
+		else if (qlm_cfg.s.qlm_cfg == 7)
+			return CVMX_HELPER_INTERFACE_MODE_RXAUI;
 		else
 			return CVMX_HELPER_INTERFACE_MODE_DISABLED;
 	case 2:
@@ -134,8 +144,7 @@ static cvmx_helper_interface_mode_t __cvmx_get_mode_cn68xx(int interface)
 		/* QLM is disabled when QLM SPD is 15. */
 		if (qlm_cfg.s.qlm_spd == 15)
 			return CVMX_HELPER_INTERFACE_MODE_DISABLED;
-
-		if (qlm_cfg.s.qlm_cfg == 2)
+		else if (qlm_cfg.s.qlm_cfg == 2)
 			return CVMX_HELPER_INTERFACE_MODE_SGMII;
 		else if (qlm_cfg.s.qlm_cfg == 3)
 			return CVMX_HELPER_INTERFACE_MODE_XAUI;
@@ -150,8 +159,10 @@ static cvmx_helper_interface_mode_t __cvmx_get_mode_cn68xx(int interface)
 			qlm_cfg.u64 = cvmx_read_csr(CVMX_MIO_QLMX_CFG(1));
 			if (qlm_cfg.s.qlm_cfg != 0)
 				return CVMX_HELPER_INTERFACE_MODE_DISABLED;
-		}
-		return CVMX_HELPER_INTERFACE_MODE_NPI;
+			else
+				return CVMX_HELPER_INTERFACE_MODE_NPI;
+		} else 
+			return CVMX_HELPER_INTERFACE_MODE_NPI;
 	case 8:
 		return CVMX_HELPER_INTERFACE_MODE_LOOP;
 	default:
@@ -423,6 +434,7 @@ int cvmx_helper_interface_enumerate(int interface)
 		break;
 		/* XAUI is a single high speed port */
 	case CVMX_HELPER_INTERFACE_MODE_XAUI:
+	case CVMX_HELPER_INTERFACE_MODE_RXAUI:
 		interface_port_count[interface] =
 		    __cvmx_helper_xaui_enumerate(interface);
 		break;
@@ -502,6 +514,7 @@ int cvmx_helper_interface_probe(int interface)
 		break;
 		/* XAUI is a single high speed port */
 	case CVMX_HELPER_INTERFACE_MODE_XAUI:
+	case CVMX_HELPER_INTERFACE_MODE_RXAUI:
 		__cvmx_helper_xaui_probe(interface);
 		break;
 		/*
@@ -732,6 +745,7 @@ static int __cvmx_helper_packet_hardware_enable(int interface)
 		break;
 		/* XAUI is a single high speed port */
 	case CVMX_HELPER_INTERFACE_MODE_XAUI:
+	case CVMX_HELPER_INTERFACE_MODE_RXAUI:
 		result = __cvmx_helper_xaui_enable(interface);
 		break;
 		/*
@@ -1174,6 +1188,7 @@ cvmx_helper_link_info_t cvmx_helper_link_get(int ipd_port)
 		/* Network links are not supported */
 		break;
 	case CVMX_HELPER_INTERFACE_MODE_XAUI:
+	case CVMX_HELPER_INTERFACE_MODE_RXAUI:
 		result = __cvmx_helper_xaui_link_get(ipd_port);
 		break;
 	case CVMX_HELPER_INTERFACE_MODE_GMII:
@@ -1230,6 +1245,7 @@ int cvmx_helper_link_set(int ipd_port, cvmx_helper_link_info_t link_info)
 	case CVMX_HELPER_INTERFACE_MODE_PCIE:
 		break;
 	case CVMX_HELPER_INTERFACE_MODE_XAUI:
+	case CVMX_HELPER_INTERFACE_MODE_RXAUI:
 		result = __cvmx_helper_xaui_link_set(ipd_port, link_info);
 		break;
 		/*
@@ -1291,6 +1307,7 @@ int cvmx_helper_configure_loopback(int ipd_port, int enable_internal,
 	case CVMX_HELPER_INTERFACE_MODE_LOOP:
 		break;
 	case CVMX_HELPER_INTERFACE_MODE_XAUI:
+	case CVMX_HELPER_INTERFACE_MODE_RXAUI:
 		result =
 		    __cvmx_helper_xaui_configure_loopback(ipd_port,
 							  enable_internal,

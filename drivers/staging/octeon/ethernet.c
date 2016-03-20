@@ -803,6 +803,7 @@ static int cvm_oct_probe(struct platform_device *pdev)
 				break;
 
 			case CVMX_HELPER_INTERFACE_MODE_XAUI:
+			case CVMX_HELPER_INTERFACE_MODE_RXAUI:
 				dev->netdev_ops = &cvm_oct_xaui_netdev_ops;
 				strcpy(dev->name, "xaui%d");
 				break;

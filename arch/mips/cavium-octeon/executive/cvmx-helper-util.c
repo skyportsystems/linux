@@ -68,6 +68,8 @@ const char *cvmx_helper_interface_mode_to_string(cvmx_helper_interface_mode_t
 		return "PCIE";
 	case CVMX_HELPER_INTERFACE_MODE_XAUI:
 		return "XAUI";
+	case CVMX_HELPER_INTERFACE_MODE_RXAUI:
+		return "RXAUI";
 	case CVMX_HELPER_INTERFACE_MODE_SGMII:
 		return "SGMII";
 	case CVMX_HELPER_INTERFACE_MODE_PICMG:
@@ -285,7 +287,9 @@ int __cvmx_helper_setup_gmx(int interface, int num_ports)
 	    || cvmx_helper_interface_get_mode(interface) ==
 	    CVMX_HELPER_INTERFACE_MODE_GMII
 	    || cvmx_helper_interface_get_mode(interface) ==
-	    CVMX_HELPER_INTERFACE_MODE_XAUI) {
+	    CVMX_HELPER_INTERFACE_MODE_XAUI
+	    || cvmx_helper_interface_get_mode(interface) ==
+	    CVMX_HELPER_INTERFACE_MODE_RXAUI) {
 		if (num_ports > 4) {
 			cvmx_dprintf("__cvmx_helper_setup_gmx: Illegal "
 				     "num_ports\n");
