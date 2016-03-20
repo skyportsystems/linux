@@ -830,6 +830,18 @@ static int cvm_oct_probe(struct platform_device *pdev)
 				break;
 			}
 
+			{
+				/* Register device only if it has an ifname property */
+				const char *ifname;
+				ifname = of_get_property(priv->of_node, "ifname", NULL);
+				if (ifname) {
+					strncpy(dev->name, ifname, IFNAMSIZ);
+					dev->name[IFNAMSIZ - 1] = '\0';
+				} else {
+					dev->netdev_ops = NULL;
+				}
+			}
+
 			if (!dev->netdev_ops) {
 				free_netdev(dev);
 			} else if (register_netdev(dev) < 0) {
