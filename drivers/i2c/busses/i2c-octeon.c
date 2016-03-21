@@ -58,6 +58,9 @@
 #define STAT_TXDATA_ACK 0x28
 #define STAT_RXADDR_ACK 0x40
 #define STAT_RXDATA_ACK 0x50
+#define STAT_SLAVE_RXADDR_ACK 0x60
+#define STAT_SLAVE_RXDATA_ACK 0x80
+#define STAT_SLAVE_RXSTOP 0xA0
 #define STAT_IDLE       0xF8
 
 struct octeon_i2c {
@@ -386,6 +389,104 @@ static int octeon_i2c_read(struct octeon_i2c *i2c, int target,
 }
 
 /**
+ * octeon_i2c_mwsr - send data as master, then read data as slave.
+ *
+ * Actual length of the read data is stored in the first two bytes
+ * of the read msg buffer (big endian).
+ *
+ * Returns 0 on success, otherwise a negative errno.
+ */
+static int octeon_i2c_mwsr(struct octeon_i2c *i2c, int target,
+			   const u8 *wdata, int wlength,
+			   u8 *rdata, int rlength)
+{
+	int i, result;
+	u8 tmp;
+
+	result = octeon_i2c_start(i2c);
+	if (result)
+		return result;
+
+	octeon_i2c_write_sw(i2c, SW_TWSI_EOP_TWSI_DATA, target << 1);
+	octeon_i2c_write_sw(i2c, SW_TWSI_EOP_TWSI_CTL, TWSI_CTL_ENAB);
+
+	result = octeon_i2c_wait(i2c);
+	if (result) {
+		dev_err(i2c->dev,
+			"%s: failed while waiting for write (0x%x)\n",
+			__func__,
+			octeon_i2c_read_sw(i2c, SW_TWSI_EOP_TWSI_STAT));
+		return result;
+	}
+
+	for (i = 0; i < wlength; i++) {
+		tmp = octeon_i2c_read_sw(i2c, SW_TWSI_EOP_TWSI_STAT);
+
+		if ((tmp != STAT_TXADDR_ACK) && (tmp != STAT_TXDATA_ACK)) {
+			dev_err(i2c->dev,
+				"%s: bad status before write (0x%x)\n",
+				__func__, tmp);
+			return -EIO;
+		}
+
+		octeon_i2c_write_sw(i2c, SW_TWSI_EOP_TWSI_DATA, wdata[i]);
+		octeon_i2c_write_sw(i2c, SW_TWSI_EOP_TWSI_CTL, TWSI_CTL_ENAB);
+
+		result = octeon_i2c_wait(i2c);
+		if (result)
+			return result;
+	}
+
+	octeon_i2c_stop(i2c);
+
+	octeon_i2c_write_sw(i2c, SW_TWSI_EOP_TWSI_CTL,
+			    TWSI_CTL_ENAB | TWSI_CTL_AAK);
+	
+	result = octeon_i2c_wait(i2c);
+	if (result) {
+		dev_err(i2c->dev,
+			"%s: failed while waiting for read (0x%x)\n",
+			__func__,
+			octeon_i2c_read_sw(i2c, SW_TWSI_EOP_TWSI_STAT));
+		return result;
+	}
+
+	memset(rdata, 0, rlength);
+
+	for (i = 2; i < rlength; i++) {
+		tmp = octeon_i2c_read_sw(i2c, SW_TWSI_EOP_TWSI_STAT);
+
+		if (tmp == STAT_SLAVE_RXSTOP)
+			break;
+
+		if ((tmp != STAT_SLAVE_RXADDR_ACK) &&
+		    (tmp != STAT_SLAVE_RXDATA_ACK)) {
+			dev_err(i2c->dev,
+				"%s: bad status before read (0x%x)\n",
+				__func__, tmp);
+			return -EIO;
+		}
+
+		if (i+1 < rlength)
+			octeon_i2c_write_sw(i2c, SW_TWSI_EOP_TWSI_CTL,
+						TWSI_CTL_ENAB | TWSI_CTL_AAK);
+		else
+			octeon_i2c_write_sw(i2c, SW_TWSI_EOP_TWSI_CTL,
+						TWSI_CTL_ENAB | TWSI_CTL_STP);
+
+		result = octeon_i2c_wait(i2c);
+		if (result)
+			return result;
+
+		rdata[i] = octeon_i2c_read_sw(i2c, SW_TWSI_EOP_TWSI_DATA);
+		rdata[0] = ((i+1) >> 8) & 0xff;
+		rdata[1] = (i+1) & 0xff;
+	}
+
+	return 0;
+}
+
+/**
  * octeon_i2c_xfer - The driver's master_xfer function.
  * @adap: Pointer to the i2c_adapter structure.
  * @msgs: Pointer to the messages to be processed.
@@ -402,6 +503,19 @@ static int octeon_i2c_xfer(struct i2c_adapter *adap,
 	int i;
 	int ret = 0;
 	struct octeon_i2c *i2c = i2c_get_adapdata(adap);
+
+	if (num == 2 &&
+	    (msgs[0].flags & I2C_M_RD) == 0 &&
+	    msgs[1].flags & I2C_M_RD &&
+	    msgs[1].flags & I2C_M_NOSTART &&
+	    msgs[0].addr == msgs[1].addr) {
+		/* Send request as master, read response as slave */
+		ret = octeon_i2c_mwsr(i2c, msgs[0].addr,
+				      msgs[0].buf, msgs[0].len,
+				      msgs[1].buf, msgs[1].len);
+		octeon_i2c_stop(i2c);
+		return (ret != 0) ? ret : num;
+	}
 
 	for (i = 0; ret == 0 && i < num; i++) {
 		pmsg = &msgs[i];
@@ -435,7 +549,9 @@ static struct i2c_adapter octeon_i2c_ops = {
 	.owner = THIS_MODULE,
 	.name = "OCTEON adapter",
 	.algo = &octeon_i2c_algo,
-	.timeout = HZ / 50,
+	/* use default adapter timeout (1 sec) to be forgiving of
+	   slow devices, especially in mwsr mode */
+	/* .timeout = HZ / 50, */
 };
 
 /**
