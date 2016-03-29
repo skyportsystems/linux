@@ -54,7 +54,7 @@ int cvmx_l2c_get_core_way_partition(uint32_t core)
 	if (core >= cvmx_octeon_num_cores())
 		return -1;
 
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX))
+	if (OCTEON_IS_OCTEON2())
 		return cvmx_read_csr(CVMX_L2C_WPAR_PPX(core)) & 0xffff;
 
 	/*
@@ -91,14 +91,14 @@ int cvmx_l2c_set_core_way_partition(uint32_t core, uint32_t mask)
 	mask &= valid_mask;
 
 	/* A UMSK setting which blocks all L2C Ways is an error on some chips */
-	if (mask == valid_mask && !OCTEON_IS_MODEL(OCTEON_CN63XX))
+	if (mask == valid_mask && !OCTEON_IS_OCTEON2())
 		return -1;
 
 	/* Validate the core number */
 	if (core >= cvmx_octeon_num_cores())
 		return -1;
 
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX)) {
+	if (OCTEON_IS_OCTEON2()) {
 		cvmx_write_csr(CVMX_L2C_WPAR_PPX(core), mask);
 		return 0;
 	}
@@ -147,10 +147,10 @@ int cvmx_l2c_set_hw_way_partition(uint32_t mask)
 	mask &= valid_mask;
 
 	/* A UMSK setting which blocks all L2C Ways is an error on some chips */
-	if (mask == valid_mask	&& !OCTEON_IS_MODEL(OCTEON_CN63XX))
+	if (mask == valid_mask	&& !OCTEON_IS_OCTEON2())
 		return -1;
 
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX))
+	if (OCTEON_IS_OCTEON2())
 		cvmx_write_csr(CVMX_L2C_WPAR_IOBX(0), mask);
 	else
 		cvmx_write_csr(CVMX_L2C_SPAR4,
@@ -160,7 +160,7 @@ int cvmx_l2c_set_hw_way_partition(uint32_t mask)
 
 int cvmx_l2c_get_hw_way_partition(void)
 {
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX))
+	if (OCTEON_IS_OCTEON2())
 		return cvmx_read_csr(CVMX_L2C_WPAR_IOBX(0)) & 0xffff;
 	else
 		return cvmx_read_csr(CVMX_L2C_SPAR4) & (0xFF);
@@ -309,7 +309,7 @@ static void fault_in(uint64_t addr, int len)
 
 int cvmx_l2c_lock_line(uint64_t addr)
 {
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX)) {
+	if (OCTEON_IS_OCTEON2()) {
 		int shift = CVMX_L2C_TAG_ADDR_ALIAS_SHIFT;
 		uint64_t assoc = cvmx_l2c_get_num_assoc();
 		uint64_t tag = addr >> shift;
@@ -430,7 +430,7 @@ void cvmx_l2c_flush(void)
 	n_set = cvmx_l2c_get_num_sets();
 	n_assoc = cvmx_l2c_get_num_assoc();
 
-	if (OCTEON_IS_MODEL(OCTEON_CN6XXX)) {
+	if (OCTEON_IS_OCTEON2()) {
 		uint64_t address;
 		/* These may look like constants, but they aren't... */
 		int assoc_shift = CVMX_L2C_TAG_ADDR_ALIAS_SHIFT;
@@ -453,7 +453,7 @@ void cvmx_l2c_flush(void)
 int cvmx_l2c_unlock_line(uint64_t address)
 {
 
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX)) {
+	if (OCTEON_IS_OCTEON2()) {
 		int assoc;
 		union cvmx_l2c_tag tag;
 		uint32_t tag_addr;
@@ -694,7 +694,7 @@ union cvmx_l2c_tag cvmx_l2c_get_tag(uint32_t association, uint32_t index)
 			     (int)index, cvmx_l2c_get_num_sets());
 		return tag;
 	}
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX)) {
+	if (OCTEON_IS_OCTEON2()) {
 		union cvmx_l2c_tadx_tag l2c_tadx_tag;
 		uint64_t address = CVMX_ADD_SEG(CVMX_MIPS_SPACE_XKPHYS,
 						(association << CVMX_L2C_TAG_ADDR_ALIAS_SHIFT) |
@@ -765,7 +765,7 @@ uint32_t cvmx_l2c_address_to_index(uint64_t addr)
 	uint64_t idx = addr >> CVMX_L2C_IDX_ADDR_SHIFT;
 	int indxalias = 0;
 
-	if (OCTEON_IS_MODEL(OCTEON_CN6XXX)) {
+	if (OCTEON_IS_OCTEON2()) {
 		union cvmx_l2c_ctl l2c_ctl;
 		l2c_ctl.u64 = cvmx_read_csr(CVMX_L2C_CTL);
 		indxalias = !l2c_ctl.s.disidxalias;
@@ -776,7 +776,12 @@ uint32_t cvmx_l2c_address_to_index(uint64_t addr)
 	}
 
 	if (indxalias) {
-		if (OCTEON_IS_MODEL(OCTEON_CN63XX)) {
+		if (OCTEON_IS_MODEL(OCTEON_CN68XX)) {
+			uint32_t a_14_12 = (idx / (CVMX_L2C_MEMBANK_SELECT_SIZE/(1<<CVMX_L2C_IDX_ADDR_SHIFT))) & 0x7;
+			idx ^= (idx / cvmx_l2c_get_num_sets()) & 0x3ff;
+			idx ^= a_14_12 & 0x3;
+			idx ^= a_14_12 << 2;
+		} else if (OCTEON_IS_OCTEON2()) {
 			uint32_t a_14_12 = (idx / (CVMX_L2C_MEMBANK_SELECT_SIZE/(1<<CVMX_L2C_IDX_ADDR_SHIFT))) & 0x7;
 			idx ^= idx / cvmx_l2c_get_num_sets();
 			idx ^= a_14_12;
@@ -801,11 +806,11 @@ int cvmx_l2c_get_cache_size_bytes(void)
 int cvmx_l2c_get_set_bits(void)
 {
 	int l2_set_bits;
-	if (OCTEON_IS_MODEL(OCTEON_CN56XX) || OCTEON_IS_MODEL(OCTEON_CN58XX))
+	if (OCTEON_IS_MODEL(OCTEON_CN56XX) || OCTEON_IS_MODEL(OCTEON_CN58XX) || OCTEON_IS_MODEL(OCTEON_CN68XX))
 		l2_set_bits = 11;	/* 2048 sets */
-	else if (OCTEON_IS_MODEL(OCTEON_CN38XX) || OCTEON_IS_MODEL(OCTEON_CN63XX))
+	else if (OCTEON_IS_MODEL(OCTEON_CN38XX) || OCTEON_IS_MODEL(OCTEON_CN63XX) || OCTEON_IS_MODEL(OCTEON_CN66XX))
 		l2_set_bits = 10;	/* 1024 sets */
-	else if (OCTEON_IS_MODEL(OCTEON_CN31XX) || OCTEON_IS_MODEL(OCTEON_CN52XX))
+	else if (OCTEON_IS_MODEL(OCTEON_CN31XX) || OCTEON_IS_MODEL(OCTEON_CN52XX) || OCTEON_IS_MODEL(OCTEON_CN61XX))
 		l2_set_bits = 9;	/* 512 sets */
 	else if (OCTEON_IS_MODEL(OCTEON_CN30XX))
 		l2_set_bits = 8;	/* 256 sets */
@@ -834,7 +839,7 @@ int cvmx_l2c_get_num_assoc(void)
 	    OCTEON_IS_MODEL(OCTEON_CN50XX) ||
 	    OCTEON_IS_MODEL(OCTEON_CN38XX))
 		l2_assoc = 8;
-	else if (OCTEON_IS_MODEL(OCTEON_CN63XX))
+	else if (OCTEON_IS_OCTEON2())
 		l2_assoc = 16;
 	else if (OCTEON_IS_MODEL(OCTEON_CN31XX) ||
 		 OCTEON_IS_MODEL(OCTEON_CN30XX))
@@ -845,7 +850,7 @@ int cvmx_l2c_get_num_assoc(void)
 	}
 
 	/* Check to see if part of the cache is disabled */
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX)) {
+	if (OCTEON_IS_OCTEON2()) {
 		union cvmx_mio_fus_dat3 mio_fus_dat3;
 
 		mio_fus_dat3.u64 = cvmx_read_csr(CVMX_MIO_FUS_DAT3);
@@ -862,11 +867,11 @@ int cvmx_l2c_get_num_assoc(void)
 		 * 1 1 4-way 512KB cache
 		 */
 
-		if (mio_fus_dat3.s.l2c_crip == 3)
+		if (mio_fus_dat3.cn63xx.l2c_crip == 3)
 			l2_assoc = 4;
-		else if (mio_fus_dat3.s.l2c_crip == 2)
+		else if (mio_fus_dat3.cn63xx.l2c_crip == 2)
 			l2_assoc = 8;
-		else if (mio_fus_dat3.s.l2c_crip == 1)
+		else if (mio_fus_dat3.cn63xx.l2c_crip == 1)
 			l2_assoc = 12;
 	} else {
 		union cvmx_l2d_fus3 val;
@@ -906,7 +911,7 @@ void cvmx_l2c_flush_line(uint32_t assoc, uint32_t index)
 		return;
 	}
 
-	if (OCTEON_IS_MODEL(OCTEON_CN63XX)) {
+	if (OCTEON_IS_OCTEON2()) {
 		uint64_t address;
 		/* Create the address based on index and association.
 		 * Bits<20:17> select the way of the cache block involved in

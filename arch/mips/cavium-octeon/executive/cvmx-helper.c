@@ -1042,10 +1042,18 @@ int cvmx_helper_initialize_packet_io_global(void)
 	 * to the cores. This avoids conditions where IO blocks might
 	 * be starved under very high L2 loads.
 	 */
-	l2c_cfg.u64 = cvmx_read_csr(CVMX_L2C_CFG);
-	l2c_cfg.s.lrf_arb_mode = 0;
-	l2c_cfg.s.rfb_arb_mode = 0;
-	cvmx_write_csr(CVMX_L2C_CFG, l2c_cfg.u64);
+	if (OCTEON_IS_OCTEON2()) {
+		union cvmx_l2c_ctl l2c_ctl;
+		l2c_ctl.u64 = cvmx_read_csr(CVMX_L2C_CTL);
+		l2c_ctl.s.rsp_arb_mode = 1;
+		l2c_ctl.s.xmc_arb_mode = 0;
+		cvmx_write_csr(CVMX_L2C_CTL, l2c_ctl.u64);
+	} else {
+		l2c_cfg.u64 = cvmx_read_csr(CVMX_L2C_CFG);
+		l2c_cfg.s.lrf_arb_mode = 0;
+		l2c_cfg.s.rfb_arb_mode = 0;
+		cvmx_write_csr(CVMX_L2C_CFG, l2c_cfg.u64);
+ 	}
 
 	/* Make sure SMI/MDIO is enabled so we can query PHYs */
 	smix_en.u64 = cvmx_read_csr(CVMX_SMIX_EN(0));
