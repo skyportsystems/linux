@@ -285,10 +285,27 @@ cvmx_helper_link_info_t __cvmx_helper_xaui_link_get(int ipd_port)
 		result.s.full_duplex = 1;
 		result.s.speed = 10000;
 	} else {
+		union cvmx_pcsxx_10gbx_status_reg gbx_stat;
 		/* Disable GMX and PCSX interrupts. */
 		cvmx_write_csr(CVMX_GMXX_RXX_INT_EN(0, interface), 0x0);
 		cvmx_write_csr(CVMX_GMXX_TX_INT_EN(interface), 0x0);
 		cvmx_write_csr(CVMX_PCSXX_INT_EN_REG(interface), 0x0);
+		gbx_stat.u64 = cvmx_read_csr(CVMX_PCSXX_10GBX_STATUS_REG(interface));
+		if (!gbx_stat.s.alignd) {
+			/* On some boards, when the link partner resets, our PCSX state
+			   machine repeatedly fails to achieve link alignment. Toggling
+			   power-down mode briefly resolves the problem. */
+			union cvmx_pcsxx_control1_reg xaui_ctl;
+			uint64_t MS = cvmx_sysinfo_get()->cpu_clock_hz / 1000;
+			printk(KERN_INFO "%s: XAUI%d: lanes not aligned; resetting PCSX state machine\n",
+			       __func__, interface);
+			xaui_ctl.u64 = cvmx_read_csr(CVMX_PCSXX_CONTROL1_REG(interface));
+			xaui_ctl.s.lo_pwr = 1;
+			cvmx_write_csr(CVMX_PCSXX_CONTROL1_REG(interface), xaui_ctl.u64);
+			cvmx_wait(10 * MS);
+			xaui_ctl.s.lo_pwr = 0;
+			cvmx_write_csr(CVMX_PCSXX_CONTROL1_REG(interface), xaui_ctl.u64);
+		}
 	}
 	return result;
 }
