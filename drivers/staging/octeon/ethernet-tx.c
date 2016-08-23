@@ -492,6 +492,11 @@ skip_xmit:
 	while (skb_to_free > 0) {
 		struct sk_buff *t = __skb_dequeue(&priv->tx_free_list[qos]);
 
+		if (!t) {
+			dev_err(&dev->dev, "%s: t=NULL skb_to_free=%d\n",
+				__func__, skb_to_free);
+			break;
+		}
 		t->next = to_free_list;
 		to_free_list = t;
 		skb_to_free--;
