@@ -38,6 +38,9 @@
 #include <asm/octeon/cvmx-fpa.h>
 #include <asm/octeon/cvmx-wqe.h>
 
+/* Max number of GMXX */
+#define CVMX_HELPER_MAX_GMX             (OCTEON_IS_MODEL(OCTEON_CN68XX) ? 5 : 2)
+
 typedef enum {
 	CVMX_HELPER_INTERFACE_MODE_DISABLED,
 	CVMX_HELPER_INTERFACE_MODE_RGMII,

@@ -218,22 +218,28 @@ int cvmx_helper_setup_red_queue(int queue, int pass_thresh, int drop_thresh)
  */
 int cvmx_helper_setup_red(int pass_thresh, int drop_thresh)
 {
-	union cvmx_ipd_portx_bp_page_cnt page_cnt;
-	union cvmx_ipd_bp_prt_red_end ipd_bp_prt_red_end;
-	union cvmx_ipd_red_port_enable red_port_enable;
 	int queue;
 	int interface;
 	int port;
 
 	/* Disable backpressure based on queued buffers. It needs SW support */
-	page_cnt.u64 = 0;
-	page_cnt.s.bp_enb = 0;
-	page_cnt.s.page_cnt = 100;
-	for (interface = 0; interface < 2; interface++) {
-		for (port = cvmx_helper_get_first_ipd_port(interface);
-		     port < cvmx_helper_get_last_ipd_port(interface); port++)
-			cvmx_write_csr(CVMX_IPD_PORTX_BP_PAGE_CNT(port),
-				       page_cnt.u64);
+	if (octeon_has_feature(OCTEON_FEATURE_PKND)) {
+		int bpid;
+
+		for (bpid = 0; bpid < 64; bpid++)
+			cvmx_write_csr(CVMX_IPD_BPIDX_MBUF_TH(bpid), 0);
+	} else {
+		union cvmx_ipd_portx_bp_page_cnt page_cnt;
+
+		page_cnt.u64 = 0;
+		page_cnt.s.bp_enb = 0;
+		page_cnt.s.page_cnt = 100;
+		for (interface = 0; interface < CVMX_HELPER_MAX_GMX; interface++) {
+			for (port = cvmx_helper_get_first_ipd_port(interface);
+			     port < cvmx_helper_get_last_ipd_port(interface); port++)
+				cvmx_write_csr(CVMX_IPD_PORTX_BP_PAGE_CNT(port),
+					       page_cnt.u64);
+		}
 	}
 
 	for (queue = 0; queue < 8; queue++)
@@ -241,15 +247,38 @@ int cvmx_helper_setup_red(int pass_thresh, int drop_thresh)
 
 	/* Shutoff the dropping based on the per port page count. SW isn't
 	   decrementing it right now */
-	ipd_bp_prt_red_end.u64 = 0;
-	ipd_bp_prt_red_end.s.prt_enb = 0;
-	cvmx_write_csr(CVMX_IPD_BP_PRT_RED_END, ipd_bp_prt_red_end.u64);
+	if (octeon_has_feature(OCTEON_FEATURE_PKND))
+		cvmx_write_csr(CVMX_IPD_ON_BP_DROP_PKTX(0), 0);
+	else
+		cvmx_write_csr(CVMX_IPD_BP_PRT_RED_END, 0);
 
-	red_port_enable.u64 = 0;
-	red_port_enable.s.prt_enb = 0xfffffffffull;
-	red_port_enable.s.avg_dly = 10000;
-	red_port_enable.s.prb_dly = 10000;
-	cvmx_write_csr(CVMX_IPD_RED_PORT_ENABLE, red_port_enable.u64);
+	/*
+	 * Setting up avg_dly and prb_dly, enable bits
+	 */
+	if (octeon_has_feature(OCTEON_FEATURE_PKND)) {
+		union cvmx_ipd_red_delay red_delay;
+		union cvmx_ipd_red_bpid_enablex red_bpid_enable;
+
+		red_delay.u64 = 0;
+		red_delay.s.avg_dly = 10000;
+		red_delay.s.prb_dly = 10000;
+		cvmx_write_csr(CVMX_IPD_RED_DELAY, red_delay.u64);
+
+		/*
+		 * Only enable the gmx ports
+		 */
+		red_bpid_enable.u64 = 0;
+		red_bpid_enable.s.prt_enb = 0xffffffffffffffffull;
+		cvmx_write_csr(CVMX_IPD_RED_BPID_ENABLEX(0), red_bpid_enable.u64);
+	} else {
+		union cvmx_ipd_red_port_enable red_port_enable;
+
+		red_port_enable.u64 = 0;
+		red_port_enable.s.prt_enb = 0xfffffffffull;
+		red_port_enable.s.avg_dly = 10000;
+		red_port_enable.s.prb_dly = 10000;
+		cvmx_write_csr(CVMX_IPD_RED_PORT_ENABLE, red_port_enable.u64);
+	}
 
 	return 0;
 }
