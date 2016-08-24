@@ -44,8 +44,39 @@
 #include <asm/octeon/cvmx-scratch.h>
 
 #include <asm/octeon/cvmx-gmxx-defs.h>
+#include <asm/octeon/cvmx-sso-defs.h>
 
 static struct napi_struct cvm_oct_napi;
+
+static void cvm_oct_no_more_work(struct napi_struct *napi)
+{
+	/* No more CPUs doing processing, enable interrupts so
+	 * we can start processing again when there is
+	 * something to do.
+	 */
+	if (OCTEON_IS_MODEL(OCTEON_CN68XX)) {
+		union cvmx_sso_wq_int_thrx int_thr;
+		int_thr.u64 = 0;
+		int_thr.s.iq_thr = 1;
+		int_thr.s.ds_thr = 1;
+		/*
+		 * Enable SSO interrupt when our port has at
+		 * least one packet.
+		 */
+		cvmx_write_csr(CVMX_SSO_WQ_INT_THRX(pow_receive_group),
+			       int_thr.u64);
+	} else {
+		union cvmx_pow_wq_int_thrx int_thr;
+		int_thr.u64 = 0;
+		int_thr.s.iq_thr = 1;
+		int_thr.s.ds_thr = 1;
+		/* Enable POW interrupt when our port has at
+		 * least one packet.
+		 */
+		cvmx_write_csr(CVMX_POW_WQ_INT_THRX(pow_receive_group),
+			       int_thr.u64);
+	}
+}
 
 /**
  * cvm_oct_do_interrupt - interrupt handler.
@@ -58,7 +89,19 @@ static struct napi_struct cvm_oct_napi;
 static irqreturn_t cvm_oct_do_interrupt(int cpl, void *dev_id)
 {
 	/* Disable the IRQ and start napi_poll. */
-	disable_irq_nosync(OCTEON_IRQ_WORKQ0 + pow_receive_group);
+	if (OCTEON_IS_MODEL(OCTEON_CN68XX)) {
+		cvmx_write_csr(CVMX_SSO_WQ_INT_THRX(pow_receive_group), 0);
+		cvmx_write_csr(CVMX_SSO_WQ_INT, 1ULL << pow_receive_group);
+	} else {
+		union cvmx_pow_wq_int wq_int;
+
+		cvmx_write_csr(CVMX_POW_WQ_INT_THRX(pow_receive_group), 0);
+
+		wq_int.u64 = 0;
+		wq_int.s.wq_int = 1 << pow_receive_group;
+		cvmx_write_csr(CVMX_POW_WQ_INT, wq_int.u64);
+	}
+
 	napi_schedule(&cvm_oct_napi);
 
 	return IRQ_HANDLED;
@@ -436,7 +479,7 @@ static int cvm_oct_napi_poll(struct napi_struct *napi, int budget)
 	if (rx_count < budget && napi != NULL) {
 		/* No more work */
 		napi_complete(napi);
-		enable_irq(OCTEON_IRQ_WORKQ0 + pow_receive_group);
+		cvm_oct_no_more_work(napi);
 	}
 	return rx_count;
 }
@@ -454,7 +497,90 @@ void cvm_oct_poll_controller(struct net_device *dev)
 }
 #endif
 
-void cvm_oct_rx_initialize(void)
+static struct kmem_cache *cvm_oct_kmem_sso;
+static int cvm_oct_sso_fptr_count;
+
+static int cvm_oct_sso_initialize(int num_wqe)
+{
+	union cvmx_sso_cfg sso_cfg;
+	union cvmx_fpa_fpfx_marks fpa_marks;
+	int i;
+	int rwq_bufs;
+
+	if (!OCTEON_IS_MODEL(OCTEON_CN68XX))
+		return 0;
+
+	rwq_bufs = 48 + DIV_ROUND_UP(num_wqe, 26);
+	cvm_oct_sso_fptr_count = rwq_bufs;
+	cvm_oct_kmem_sso = kmem_cache_create("octeon_ethernet_sso", 256, 128, 0, NULL);
+	if (cvm_oct_kmem_sso == NULL) {
+		pr_err("cannot create kmem_cache for octeon_ethernet_sso\n");
+		return -ENOMEM;
+	}
+	printk("created octeon_ethernet_sso kmem num_wqe=%d rwq_bufs=%d\n", num_wqe, rwq_bufs);
+
+	/*
+	 * CN68XX-P1 may reset with the wrong values, put in
+	 * the correct values.
+	 */
+	fpa_marks.u64 = 0;
+	fpa_marks.s.fpf_wr = 0xa4;
+	fpa_marks.s.fpf_rd = 0x40;
+	cvmx_write_csr(CVMX_FPA_FPF8_MARKS, fpa_marks.u64);
+
+	/* Make sure RWI/RWO is disabled. */
+	sso_cfg.u64 = cvmx_read_csr(CVMX_SSO_CFG);
+	sso_cfg.s.rwen = 0;
+	cvmx_write_csr(CVMX_SSO_CFG, sso_cfg.u64);
+
+	while (rwq_bufs) {
+		union cvmx_sso_rwq_psh_fptr fptr;
+		void *mem;
+
+		mem = kmem_cache_alloc(cvm_oct_kmem_sso, GFP_KERNEL);
+		if (mem == NULL) {
+			pr_err("cannot allocate memory from octeon_ethernet_sso\n");
+			return -ENOMEM;
+		}
+		for (;;) {
+			fptr.u64 = cvmx_read_csr(CVMX_SSO_RWQ_PSH_FPTR);
+			if (!fptr.s.full)
+				break;
+			__delay(1000);
+		}
+		fptr.s.fptr = virt_to_phys(mem) >> 7;
+		cvmx_write_csr(CVMX_SSO_RWQ_PSH_FPTR, fptr.u64);
+		rwq_bufs--;
+	}
+	for (i = 0; i < 8; i++) {
+		union cvmx_sso_rwq_head_ptrx head_ptr;
+		union cvmx_sso_rwq_tail_ptrx tail_ptr;
+		void *mem;
+
+		mem = kmem_cache_alloc(cvm_oct_kmem_sso, GFP_KERNEL);
+		if (mem == NULL) {
+			pr_err("cannot allocate memory from octeon_ethernet_sso\n");
+			return -ENOMEM;
+		}
+
+		head_ptr.u64 = 0;
+		tail_ptr.u64 = 0;
+		head_ptr.s.ptr = virt_to_phys(mem) >> 7;
+		tail_ptr.s.ptr = head_ptr.s.ptr;
+		cvmx_write_csr(CVMX_SSO_RWQ_HEAD_PTRX(i), head_ptr.u64);
+		cvmx_write_csr(CVMX_SSO_RWQ_TAIL_PTRX(i), tail_ptr.u64);
+	}
+	/* Now enable the SS0  RWI/RWO */
+	sso_cfg.u64 = cvmx_read_csr(CVMX_SSO_CFG);
+	sso_cfg.s.rwen = 1;
+	sso_cfg.s.rwq_byp_dis = 0;
+	sso_cfg.s.rwio_byp_dis = 0;
+	cvmx_write_csr(CVMX_SSO_CFG, sso_cfg.u64);
+
+	return 0;
+}
+
+void cvm_oct_rx_initialize(int num_wqe)
 {
 	int i;
 	struct net_device *dev_for_napi = NULL;
@@ -481,35 +607,8 @@ void cvm_oct_rx_initialize(void)
 		panic("Could not acquire Ethernet IRQ %d\n",
 		      OCTEON_IRQ_WORKQ0 + pow_receive_group);
 
-	disable_irq_nosync(OCTEON_IRQ_WORKQ0 + pow_receive_group);
-
-	/* Enable POW interrupt when our port has at least one packet */
-	if (OCTEON_IS_MODEL(OCTEON_CN68XX)) {
-		union cvmx_sso_wq_int_thrx int_thr;
-		union cvmx_pow_wq_int_pc int_pc;
-
-		int_thr.u64 = 0;
-		int_thr.s.tc_en = 1;
-		int_thr.s.tc_thr = 1;
-		cvmx_write_csr(CVMX_SSO_WQ_INT_THRX(pow_receive_group),
-			       int_thr.u64);
-
-		int_pc.u64 = 0;
-		int_pc.s.pc_thr = 5;
-		cvmx_write_csr(CVMX_SSO_WQ_INT_PC, int_pc.u64);
-	} else {
-		union cvmx_pow_wq_int_thrx int_thr;
-		union cvmx_pow_wq_int_pc int_pc;
-
-		int_thr.u64 = 0;
-		int_thr.s.tc_en = 1;
-		int_thr.s.tc_thr = 1;
-		cvmx_write_csr(CVMX_POW_WQ_INT_THRX(pow_receive_group),
-			       int_thr.u64);
-
-		int_pc.u64 = 0;
-		int_pc.s.pc_thr = 5;
-		cvmx_write_csr(CVMX_POW_WQ_INT_PC, int_pc.u64);
+	if (cvm_oct_sso_initialize(num_wqe)) {
+		pr_err("ruh roh\n");
 	}
 
 	/* Schedule NAPI now. This will indirectly enable the interrupt. */

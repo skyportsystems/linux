@@ -38,6 +38,7 @@
 
 #include <asm/octeon/cvmx-gmxx-defs.h>
 #include <asm/octeon/cvmx-smix-defs.h>
+#include <asm/octeon/cvmx-sso-defs.h>
 
 static int num_packet_buffers = 1024;
 module_param(num_packet_buffers, int, 0444);
@@ -860,7 +861,7 @@ static int cvm_oct_probe(struct platform_device *pdev)
 	}
 
 	cvm_oct_tx_initialize();
-	cvm_oct_rx_initialize();
+	cvm_oct_rx_initialize(num_packet_buffers);
 
 	/*
 	 * 150 uS: about 10 1500-byte packets at 1GE.

@@ -330,9 +330,9 @@ int __cvmx_helper_setup_gmx(int interface, int num_ports)
 		cvmx_write_csr(CVMX_GMXX_RX_PRTS(interface), gmx_rx_prts.u64);
 	}
 
-	/* Skip setting CVMX_PKO_REG_GMX_PORT_MODE on 30XX, 31XX, and 50XX */
+	/* Skip setting CVMX_PKO_REG_GMX_PORT_MODE on 30XX, 31XX, 50XX, and 68XX */
 	if (!OCTEON_IS_MODEL(OCTEON_CN30XX) && !OCTEON_IS_MODEL(OCTEON_CN31XX)
-	    && !OCTEON_IS_MODEL(OCTEON_CN50XX)) {
+	    && !OCTEON_IS_MODEL(OCTEON_CN50XX) && !OCTEON_IS_MODEL(OCTEON_CN68XX)) {
 		/* Tell PKO the number of ports on this interface */
 		pko_mode.u64 = cvmx_read_csr(CVMX_PKO_REG_GMX_PORT_MODE);
 		if (interface == 0) {
@@ -391,6 +391,20 @@ int __cvmx_helper_setup_gmx(int interface, int num_ports)
 	for (index = 0; index < num_ports; index++)
 		cvmx_write_csr(CVMX_GMXX_TXX_THRESH(index, interface),
 			       gmx_tx_thresh.u64);
+
+	/*
+	 * For o68, we need to setup the pipes
+	 */
+	if (OCTEON_IS_MODEL(OCTEON_CN68XX) && interface < CVMX_HELPER_MAX_GMX) {
+		union cvmx_gmxx_txx_pipe config;
+
+		for (index = 0; index < num_ports; index++) {
+			config.u64 = cvmx_read_csr(CVMX_GMXX_TXX_PIPE(index, interface));
+			config.s.nump = 1;
+			config.s.base = cvmx_helper_get_ipd_port(interface, index);
+			cvmx_write_csr(CVMX_GMXX_TXX_PIPE(index, interface), config.u64);
+		}
+	}
 
 	return 0;
 }
