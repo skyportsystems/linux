@@ -2,6 +2,7 @@
 #include <linux/linkage.h>
 #include <asm/segment.h>
 #include <asm/page_types.h>
+#include <asm/smap.h>
 
 # Copyright 2003, 2008 Pavel Machek <pavel@suse.cz>, distribute under GPLv2
 
@@ -12,12 +13,10 @@ ENTRY(wakeup_pmode_return)
 wakeup_pmode_return:
 	movw	$__KERNEL_DS, %ax
 	movw	%ax, %ss
-	movw	%ax, %fs
-	movw	%ax, %gs
-
-	movw	$__USER_DS, %ax
 	movw	%ax, %ds
 	movw	%ax, %es
+	movw	%ax, %fs
+	movw	%ax, %gs
 
 	# reload the gdt, as we need the full 32 bit address
 	lidt	saved_idt
@@ -31,13 +30,11 @@ wakeup_pmode_return:
 	# and restore the stack ... but you need gdt for this to work
 	movl	saved_context_esp, %esp
 
-	movl	%cs:saved_magic, %eax
-	cmpl	$0x12345678, %eax
+	cmpl	$0x12345678, saved_magic
 	jne	bogus_magic
 
 	# jump to place where we left off
-	movl	saved_eip, %eax
-	jmp	*%eax
+	jmp	*(saved_eip)
 
 bogus_magic:
 	jmp	bogus_magic
@@ -69,6 +66,7 @@ restore_registers:
 	movl	saved_context_edi, %edi
 	pushl	saved_context_eflags
 	popfl
+	ASM_CLAC
 	ret
 
 ENTRY(do_suspend_lowlevel)

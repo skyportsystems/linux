@@ -317,10 +317,9 @@ static inline unsigned int ip_dst_mtu_maybe_forward(const struct dst_entry *dst,
 	return min(dst->dev->mtu, IP_MAX_MTU);
 }
 
-static inline unsigned int ip_skb_dst_mtu(const struct sk_buff *skb)
+static inline unsigned int ip_skb_dst_mtu(struct sock *sk,
+					  const struct sk_buff *skb)
 {
-	struct sock *sk = skb->sk;
-
 	if (!sk || !sk_fullsock(sk) || ip_sk_use_pmtu(sk)) {
 		bool forwarding = IPCB(skb)->flags & IPSKB_FORWARDED;
 
@@ -330,7 +329,7 @@ static inline unsigned int ip_skb_dst_mtu(const struct sk_buff *skb)
 	return min(skb_dst(skb)->dev->mtu, IP_MAX_MTU);
 }
 
-u32 ip_idents_reserve(u32 hash, int segs);
+u32 ip_idents_reserve(u32 hash, int segs) __intentional_overflow(-1);
 void __ip_select_ident(struct net *net, struct iphdr *iph, int segs);
 
 static inline void ip_select_ident_segs(struct net *net, struct sk_buff *skb,

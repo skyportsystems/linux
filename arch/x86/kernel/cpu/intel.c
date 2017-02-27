@@ -141,8 +141,10 @@ static void early_init_intel(struct cpuinfo_x86 *c)
 		rdmsrl(MSR_IA32_MISC_ENABLE, misc_enable);
 		if (!(misc_enable & MSR_IA32_MISC_ENABLE_FAST_STRING)) {
 			printk(KERN_INFO "Disabled fast string operations\n");
+			pax_open_kernel();
 			setup_clear_cpu_cap(X86_FEATURE_REP_GOOD);
 			setup_clear_cpu_cap(X86_FEATURE_ERMS);
+			pax_close_kernel();
 		}
 	}
 
@@ -158,7 +160,9 @@ static void early_init_intel(struct cpuinfo_x86 *c)
 	 */
 	if (c->x86 == 5 && c->x86_model == 9) {
 		pr_info("Disabling PGE capability bit\n");
+		pax_open_kernel();
 		setup_clear_cpu_cap(X86_FEATURE_PGE);
+		pax_close_kernel();
 	}
 }
 

@@ -231,7 +231,8 @@ struct super_block *freeze_bdev(struct block_device *bdev)
 		 * thaw_bdev drops it.
 		 */
 		sb = get_super(bdev);
-		drop_super(sb);
+		if (sb)
+			drop_super(sb);
 		mutex_unlock(&bdev->bd_fsfreeze_mutex);
 		return sb;
 	}
@@ -762,7 +763,7 @@ static bool bd_may_claim(struct block_device *bdev, struct block_device *whole,
 	else if (whole == bdev)
 		return true;  	 /* is a whole device which isn't held */
 
-	else if (whole->bd_holder == bd_may_claim)
+	else if (whole->bd_holder == (void *)bd_may_claim)
 		return true; 	 /* is a partition of a device that is being partitioned */
 	else if (whole->bd_holder != NULL)
 		return false;	 /* is a partition of a held device */

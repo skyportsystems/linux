@@ -1051,8 +1051,8 @@ void show_regs(struct pt_regs * regs)
 	 * Lookup NIP late so we have the best change of getting the
 	 * above info out without failing
 	 */
-	printk("NIP ["REG"] %pS\n", regs->nip, (void *)regs->nip);
-	printk("LR ["REG"] %pS\n", regs->link, (void *)regs->link);
+	printk("NIP ["REG"] %pA\n", regs->nip, (void *)regs->nip);
+	printk("LR ["REG"] %pA\n", regs->link, (void *)regs->link);
 #endif
 	show_stack(current, (unsigned long *) regs->gpr[1]);
 	if (!user_mode(regs))
@@ -1578,10 +1578,10 @@ void show_stack(struct task_struct *tsk, unsigned long *stack)
 		newsp = stack[0];
 		ip = stack[STACK_FRAME_LR_SAVE];
 		if (!firstframe || ip != lr) {
-			printk("["REG"] ["REG"] %pS", sp, ip, (void *)ip);
+			printk("["REG"] ["REG"] %pA", sp, ip, (void *)ip);
 #ifdef CONFIG_FUNCTION_GRAPH_TRACER
 			if ((ip == rth) && curr_frame >= 0) {
-				printk(" (%pS)",
+				printk(" (%pA)",
 				       (void *)current->ret_stack[curr_frame].ret);
 				curr_frame--;
 			}
@@ -1601,7 +1601,7 @@ void show_stack(struct task_struct *tsk, unsigned long *stack)
 			struct pt_regs *regs = (struct pt_regs *)
 				(sp + STACK_FRAME_OVERHEAD);
 			lr = regs->link;
-			printk("--- interrupt: %lx at %pS\n    LR = %pS\n",
+			printk("--- interrupt: %lx at %pA\n    LR = %pA\n",
 			       regs->trap, (void *)regs->nip, (void *)lr);
 			firstframe = 1;
 		}
@@ -1638,22 +1638,15 @@ void notrace __ppc64_runlatch_off(void)
 }
 #endif /* CONFIG_PPC64 */
 
-unsigned long arch_align_stack(unsigned long sp)
-{
-	if (!(current->personality & ADDR_NO_RANDOMIZE) && randomize_va_space)
-		sp -= get_random_int() & ~PAGE_MASK;
-	return sp & ~0xf;
-}
-
 static inline unsigned long brk_rnd(void)
 {
         unsigned long rnd = 0;
 
 	/* 8MB for 32bit, 1GB for 64bit */
 	if (is_32bit_task())
-		rnd = (long)(get_random_int() % (1<<(23-PAGE_SHIFT)));
+		rnd = (get_random_long() % (1UL<<(23-PAGE_SHIFT)));
 	else
-		rnd = (long)(get_random_int() % (1<<(30-PAGE_SHIFT)));
+		rnd = (get_random_long() % (1UL<<(30-PAGE_SHIFT)));
 
 	return rnd << PAGE_SHIFT;
 }

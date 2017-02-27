@@ -1726,7 +1726,7 @@ static void if_cfg_callback(struct octeon_device *oct,
 	if (resp->status)
 		dev_err(&oct->pci_dev->dev, "nic if cfg instruction failed. Status: %llx\n",
 			CVM_CAST64(resp->status));
-	ACCESS_ONCE(ctx->cond) = 1;
+	ACCESS_ONCE_RW(ctx->cond) = 1;
 
 	/* This barrier is required to be sure that the response has been
 	 * written fully before waking up the handler
@@ -2823,7 +2823,7 @@ static int liquidio_xmit(struct sk_buff *skb, struct net_device *netdev)
 		if (!g) {
 			netif_info(lio, tx_err, lio->netdev,
 				   "Transmit scatter gather: glist null!\n");
-			goto lio_xmit_failed;
+			goto lio_xmit_dma_failed;
 		}
 
 		cmdsetup.s.gather = 1;
@@ -2894,7 +2894,7 @@ static int liquidio_xmit(struct sk_buff *skb, struct net_device *netdev)
 	else
 		status = octnet_send_nic_data_pkt(oct, &ndata, xmit_more);
 	if (status == IQ_SEND_FAILED)
-		goto lio_xmit_failed;
+		goto lio_xmit_dma_failed;
 
 	netif_info(lio, tx_queued, lio->netdev, "Transmit queued successfully\n");
 
@@ -2908,12 +2908,13 @@ static int liquidio_xmit(struct sk_buff *skb, struct net_device *netdev)
 
 	return NETDEV_TX_OK;
 
+lio_xmit_dma_failed:
+	dma_unmap_single(&oct->pci_dev->dev, ndata.cmd.dptr,
+			 ndata.datasize, DMA_TO_DEVICE);
 lio_xmit_failed:
 	stats->tx_dropped++;
 	netif_info(lio, tx_err, lio->netdev, "IQ%d Transmit dropped:%llu\n",
 		   iq_no, stats->tx_dropped);
-	dma_unmap_single(&oct->pci_dev->dev, ndata.cmd.dptr,
-			 ndata.datasize, DMA_TO_DEVICE);
 	recv_buffer_free(skb);
 	return NETDEV_TX_OK;
 }
@@ -3176,7 +3177,7 @@ static int setup_nic_devices(struct octeon_device *octeon_dev)
 		dev_dbg(&octeon_dev->pci_dev->dev,
 			"requesting config for interface %d, iqs %d, oqs %d\n",
 			i, num_iqueues, num_oqueues);
-		ACCESS_ONCE(ctx->cond) = 0;
+		ACCESS_ONCE_RW(ctx->cond) = 0;
 		ctx->octeon_id = lio_get_device_id(octeon_dev);
 		init_waitqueue_head(&ctx->wc);
 
@@ -3239,8 +3240,11 @@ static int setup_nic_devices(struct octeon_device *octeon_dev)
 		props = &octeon_dev->props[i];
 		props->netdev = netdev;
 
-		if (num_iqueues > 1)
-			lionetdevops.ndo_select_queue = select_q;
+		if (num_iqueues > 1) {
+			pax_open_kernel();
+			const_cast(lionetdevops.ndo_select_queue) = select_q;
+			pax_close_kernel();
+		}
 
 		/* Associate the routines that will handle different
 		 * netdev tasks.

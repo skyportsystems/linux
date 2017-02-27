@@ -91,7 +91,7 @@ jbd2_get_transaction(journal_t *journal, transaction_t *transaction)
 	atomic_set(&transaction->t_updates, 0);
 	atomic_set(&transaction->t_outstanding_credits,
 		   atomic_read(&journal->j_reserved_credits));
-	atomic_set(&transaction->t_handle_count, 0);
+	atomic_set_unchecked(&transaction->t_handle_count, 0);
 	INIT_LIST_HEAD(&transaction->t_inode_list);
 	INIT_LIST_HEAD(&transaction->t_private_list);
 
@@ -374,7 +374,7 @@ repeat:
 	handle->h_requested_credits = blocks;
 	handle->h_start_jiffies = jiffies;
 	atomic_inc(&transaction->t_updates);
-	atomic_inc(&transaction->t_handle_count);
+	atomic_inc_unchecked(&transaction->t_handle_count);
 	jbd_debug(4, "Handle %p given %d credits (total %d, free %lu)\n",
 		  handle, blocks,
 		  atomic_read(&transaction->t_outstanding_credits),
@@ -1876,7 +1876,9 @@ static void __jbd2_journal_temp_unlink_buffer(struct journal_head *jh)
 
 	__blist_del_buffer(list, jh);
 	jh->b_jlist = BJ_None;
-	if (test_clear_buffer_jbddirty(bh))
+	if (transaction && is_journal_aborted(transaction->t_journal))
+		clear_buffer_jbddirty(bh);
+	else if (test_clear_buffer_jbddirty(bh))
 		mark_buffer_dirty(bh);	/* Expose it to the VM */
 }
 

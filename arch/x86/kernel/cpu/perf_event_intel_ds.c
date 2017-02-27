@@ -598,7 +598,7 @@ int intel_pmu_drain_bts_buffer(void)
 
 static inline void intel_pmu_drain_pebs_buffer(void)
 {
-	struct pt_regs regs;
+	struct pt_regs regs = {};
 
 	x86_pmu.drain_pebs(&regs);
 }
@@ -869,7 +869,7 @@ static int intel_pmu_pebs_fixup_ip(struct pt_regs *regs)
 	struct cpu_hw_events *cpuc = this_cpu_ptr(&cpu_hw_events);
 	unsigned long from = cpuc->lbr_entries[0].from;
 	unsigned long old_to, to = cpuc->lbr_entries[0].to;
-	unsigned long ip = regs->ip;
+	unsigned long ip = ktva_ktla(regs->ip);
 	int is_64bit = 0;
 	void *kaddr;
 	int size;
@@ -921,6 +921,7 @@ static int intel_pmu_pebs_fixup_ip(struct pt_regs *regs)
 	} else {
 		kaddr = (void *)to;
 	}
+	kaddr = (void *)ktva_ktla((unsigned long)kaddr);
 
 	do {
 		struct insn insn;
@@ -1030,20 +1031,20 @@ static void setup_pebs_sample_data(struct perf_event *event,
 	}
 
 	/*
-	 * We use the interrupt regs as a base because the PEBS record
-	 * does not contain a full regs set, specifically it seems to
-	 * lack segment descriptors, which get used by things like
-	 * user_mode().
+	 * We use the interrupt regs as a base because the PEBS record does not
+	 * contain a full regs set, specifically it seems to lack segment
+	 * descriptors, which get used by things like user_mode().
+ 	 *
+	 * In the simple case fix up only the IP for PERF_SAMPLE_IP.
 	 *
-	 * In the simple case fix up only the IP and BP,SP regs, for
-	 * PERF_SAMPLE_IP and PERF_SAMPLE_CALLCHAIN to function properly.
-	 * A possible PERF_SAMPLE_REGS will have to transfer all regs.
+	 * We must however always use BP,SP from iregs for the unwinder to stay
+	 * sane; the record BP,SP can point into thin air when the record is
+	 * from a previous PMI context or an (I)RET happend between the record
+	 * and PMI.
 	 */
 	*regs = *iregs;
 	regs->flags = pebs->flags;
 	set_linear_ip(regs, pebs->ip);
-	regs->bp = pebs->bp;
-	regs->sp = pebs->sp;
 
 	if (sample_type & PERF_SAMPLE_REGS_INTR) {
 		regs->ax = pebs->ax;
@@ -1052,10 +1053,21 @@ static void setup_pebs_sample_data(struct perf_event *event,
 		regs->dx = pebs->dx;
 		regs->si = pebs->si;
 		regs->di = pebs->di;
-		regs->bp = pebs->bp;
-		regs->sp = pebs->sp;
 
-		regs->flags = pebs->flags;
+		/*
+		 * Per the above; only set BP,SP if we don't need callchains.
+		 *
+		 * XXX: does this make sense?
+		 */
+		if (!(sample_type & PERF_SAMPLE_CALLCHAIN)) {
+			regs->bp = pebs->bp;
+			regs->sp = pebs->sp;
+		}
+
+		/*
+		 * Preserve PERF_EFLAGS_VM from set_linear_ip().
+		 */
+		regs->flags = pebs->flags | (regs->flags & PERF_EFLAGS_VM);
 #ifndef CONFIG_X86_32
 		regs->r8 = pebs->r8;
 		regs->r9 = pebs->r9;
@@ -1069,7 +1081,7 @@ static void setup_pebs_sample_data(struct perf_event *event,
 	}
 
 	if (event->attr.precise_ip > 1 && x86_pmu.intel_cap.pebs_format >= 2) {
-		regs->ip = pebs->real_ip;
+		set_linear_ip(regs, pebs->real_ip);
 		regs->flags |= PERF_EFLAGS_EXACT;
 	} else if (event->attr.precise_ip > 1 && intel_pmu_pebs_fixup_ip(regs))
 		regs->flags |= PERF_EFLAGS_EXACT;
@@ -1234,17 +1246,17 @@ static void intel_pmu_drain_pebs_nhm(struct pt_regs *iregs)
 		struct pebs_record_nhm *p = at;
 		u64 pebs_status;
 
-		/* PEBS v3 has accurate status bits */
+		pebs_status = p->status & cpuc->pebs_enabled;
+		pebs_status &= (1ULL << x86_pmu.max_pebs_events) - 1;
+
+		/* PEBS v3 has more accurate status bits */
 		if (x86_pmu.intel_cap.pebs_format >= 3) {
-			for_each_set_bit(bit, (unsigned long *)&p->status,
-					 MAX_PEBS_EVENTS)
+			for_each_set_bit(bit, (unsigned long *)&pebs_status,
+					 x86_pmu.max_pebs_events)
 				counts[bit]++;
 
 			continue;
 		}
-
-		pebs_status = p->status & cpuc->pebs_enabled;
-		pebs_status &= (1ULL << x86_pmu.max_pebs_events) - 1;
 
 		bit = find_first_bit((unsigned long *)&pebs_status,
 					x86_pmu.max_pebs_events);
@@ -1284,8 +1296,10 @@ static void intel_pmu_drain_pebs_nhm(struct pt_regs *iregs)
 			continue;
 
 		event = cpuc->events[bit];
-		WARN_ON_ONCE(!event);
-		WARN_ON_ONCE(!event->attr.precise_ip);
+		if (WARN_ON_ONCE(!event))
+			continue;
+		if (WARN_ON_ONCE(!event->attr.precise_ip))
+			continue;
 
 		/* log dropped samples number */
 		if (error[bit])

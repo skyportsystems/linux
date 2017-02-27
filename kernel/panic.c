@@ -55,7 +55,7 @@ EXPORT_SYMBOL(panic_blink);
 /*
  * Stop ourself in panic -- architecture code may override this
  */
-void __weak panic_smp_self_stop(void)
+void __weak __noreturn panic_smp_self_stop(void)
 {
 	while (1)
 		cpu_relax();
@@ -167,7 +167,7 @@ void panic(const char *fmt, ...)
 		 * Delay timeout seconds before rebooting the machine.
 		 * We can't use the "normal" timers since we just panicked.
 		 */
-		pr_emerg("Rebooting in %d seconds..", panic_timeout);
+		pr_emerg("Rebooting in %d seconds..\n", panic_timeout);
 
 		for (i = 0; i < panic_timeout * 1000; i += PANIC_TIMER_STEP) {
 			touch_nmi_watchdog();
@@ -432,13 +432,13 @@ struct slowpath_args {
 	va_list args;
 };
 
-static void warn_slowpath_common(const char *file, int line, void *caller,
+static __nocapture(1) void warn_slowpath_common(const char *file, int line, void *caller,
 				 unsigned taint, struct slowpath_args *args)
 {
 	disable_trace_on_warning();
 
 	pr_warn("------------[ cut here ]------------\n");
-	pr_warn("WARNING: CPU: %d PID: %d at %s:%d %pS()\n",
+	pr_warn("WARNING: CPU: %d PID: %d at %s:%d %pA()\n",
 		raw_smp_processor_id(), current->pid, file, line, caller);
 
 	if (args)
@@ -503,7 +503,8 @@ EXPORT_SYMBOL(warn_slowpath_null);
  */
 __visible void __stack_chk_fail(void)
 {
-	panic("stack-protector: Kernel stack is corrupted in: %p\n",
+	dump_stack();
+	panic("stack-protector: Kernel stack is corrupted in: %pA\n",
 		__builtin_return_address(0));
 }
 EXPORT_SYMBOL(__stack_chk_fail);

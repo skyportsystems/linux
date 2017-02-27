@@ -592,7 +592,7 @@ sg_write(struct file *filp, const char __user *buf, size_t count, loff_t * ppos)
 	sg_io_hdr_t *hp;
 	unsigned char cmnd[SG_MAX_CDB_SIZE];
 
-	if (unlikely(segment_eq(get_fs(), KERNEL_DS)))
+	if (unlikely(!segment_eq(get_fs(), USER_DS)))
 		return -EINVAL;
 
 	if ((!(sfp = (Sg_fd *) filp->private_data)) || (!(sdp = sfp->parentdp)))
@@ -1093,7 +1093,7 @@ sg_ioctl(struct file *filp, unsigned int cmd_in, unsigned long arg)
 				       sdp->disk->disk_name,
 				       MKDEV(SCSI_GENERIC_MAJOR, sdp->index),
 				       NULL,
-				       (char *)arg);
+				       (char __user *)arg);
 	case BLKTRACESTART:
 		return blk_trace_startstop(sdp->device->request_queue, 1);
 	case BLKTRACESTOP:

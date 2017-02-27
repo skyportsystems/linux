@@ -20,6 +20,8 @@ KBUILD_CFLAGS			:= $(cflags-y) \
 				   $(call cc-option,-ffreestanding) \
 				   $(call cc-option,-fno-stack-protector)
 
+KBUILD_CFLAGS			:= $(filter-out $(GCC_PLUGINS_CFLAGS),$(KBUILD_CFLAGS))
+
 GCOV_PROFILE			:= n
 KASAN_SANITIZE			:= n
 

@@ -650,6 +650,7 @@ static inline int fault_in_multipages_readable(const char __user *uaddr,
 		return __get_user(c, end);
 	}
 
+	(void)c;
 	return 0;
 }
 

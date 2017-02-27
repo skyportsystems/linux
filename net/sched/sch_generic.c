@@ -352,7 +352,7 @@ void netif_carrier_on(struct net_device *dev)
 	if (test_and_clear_bit(__LINK_STATE_NOCARRIER, &dev->state)) {
 		if (dev->reg_state == NETREG_UNINITIALIZED)
 			return;
-		atomic_inc(&dev->carrier_changes);
+		atomic_inc_unchecked(&dev->carrier_changes);
 		linkwatch_fire_event(dev);
 		if (netif_running(dev))
 			__netdev_watchdog_up(dev);
@@ -371,7 +371,7 @@ void netif_carrier_off(struct net_device *dev)
 	if (!test_and_set_bit(__LINK_STATE_NOCARRIER, &dev->state)) {
 		if (dev->reg_state == NETREG_UNINITIALIZED)
 			return;
-		atomic_inc(&dev->carrier_changes);
+		atomic_inc_unchecked(&dev->carrier_changes);
 		linkwatch_fire_event(dev);
 	}
 }
@@ -624,18 +624,19 @@ struct Qdisc *qdisc_create_dflt(struct netdev_queue *dev_queue,
 	struct Qdisc *sch;
 
 	if (!try_module_get(ops->owner))
-		goto errout;
+		return NULL;
 
 	sch = qdisc_alloc(dev_queue, ops);
-	if (IS_ERR(sch))
-		goto errout;
+	if (IS_ERR(sch)) {
+		module_put(ops->owner);
+		return NULL;
+	}
 	sch->parent = parentid;
 
 	if (!ops->init || ops->init(sch, NULL) == 0)
 		return sch;
 
 	qdisc_destroy(sch);
-errout:
 	return NULL;
 }
 EXPORT_SYMBOL(qdisc_create_dflt);

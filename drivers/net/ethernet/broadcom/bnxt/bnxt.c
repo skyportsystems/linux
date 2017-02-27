@@ -3601,7 +3601,7 @@ static int bnxt_hwrm_stat_ctx_alloc(struct bnxt *bp)
 		bp->grp_info[i].fw_stats_ctx = cpr->hw_stats_ctx_id;
 	}
 	mutex_unlock(&bp->hwrm_cmd_lock);
-	return 0;
+	return rc;
 }
 
 static int bnxt_hwrm_func_qcaps(struct bnxt *bp)
@@ -4218,6 +4218,10 @@ static void bnxt_del_napi(struct bnxt *bp)
 		napi_hash_del(&bnapi->napi);
 		netif_napi_del(&bnapi->napi);
 	}
+	/* We called napi_hash_del() before netif_napi_del(), we need
+	 * to respect an RCU grace period before freeing napi structures.
+	 */
+	synchronize_net();
 }
 
 static void bnxt_init_napi(struct bnxt *bp)

@@ -123,6 +123,7 @@ void early_printk(const char *s, ...) { }
 #endif
 
 typedef __printf(1, 0) int (*printk_func_t)(const char *fmt, va_list args);
+extern int kptr_restrict;
 
 #ifdef CONFIG_PRINTK
 asmlinkage __printf(5, 0)
@@ -151,14 +152,13 @@ __printf(1, 2) __cold int printk_deferred(const char *fmt, ...);
  * with all other unrelated printk_ratelimit() callsites.  Instead use
  * printk_ratelimited() or plain old __ratelimit().
  */
-extern int __printk_ratelimit(const char *func);
+extern int __printk_ratelimit(const char *func) __nocapture(1);
 #define printk_ratelimit() __printk_ratelimit(__func__)
 extern bool printk_timed_ratelimit(unsigned long *caller_jiffies,
 				   unsigned int interval_msec);
 
 extern int printk_delay_msec;
 extern int dmesg_restrict;
-extern int kptr_restrict;
 
 extern void wake_up_klogd(void);
 

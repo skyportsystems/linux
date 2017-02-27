@@ -152,7 +152,7 @@ static int map_create(union bpf_attr *attr)
 
 	err = bpf_map_charge_memlock(map);
 	if (err)
-		goto free_map;
+		goto free_map_nouncharge;
 
 	err = bpf_map_new_fd(map);
 	if (err < 0)
@@ -162,6 +162,8 @@ static int map_create(union bpf_attr *attr)
 	return err;
 
 free_map:
+	bpf_map_uncharge_memlock(map);
+free_map_nouncharge:
 	map->ops->map_free(map);
 	return err;
 }
@@ -727,8 +729,16 @@ SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, siz
 	union bpf_attr attr = {};
 	int err;
 
-	if (!capable(CAP_SYS_ADMIN) && sysctl_unprivileged_bpf_disabled)
+	/* the syscall is limited to root temporarily. This restriction will be
+	 * lifted by upstream when a half-assed security audit is clean. Note
+	 * that eBPF+tracing must have this restriction, since it may pass
+	 * kernel data to user space
+	 */
+	if (!capable(CAP_SYS_ADMIN))
 		return -EPERM;
+#ifdef CONFIG_GRKERNSEC
+	return -EPERM;
+#endif
 
 	if (!access_ok(VERIFY_READ, uattr, 1))
 		return -EFAULT;

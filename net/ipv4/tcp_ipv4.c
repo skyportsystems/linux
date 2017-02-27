@@ -89,6 +89,10 @@ int sysctl_tcp_tw_reuse __read_mostly;
 int sysctl_tcp_low_latency __read_mostly;
 EXPORT_SYMBOL(sysctl_tcp_low_latency);
 
+#ifdef CONFIG_GRKERNSEC_BLACKHOLE
+extern int grsec_enable_blackhole;
+#endif
+
 #ifdef CONFIG_TCP_MD5SIG
 static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
 			       __be32 daddr, __be32 saddr, const struct tcphdr *th);
@@ -97,12 +101,12 @@ static int tcp_v4_md5_hash_hdr(char *md5_hash, const struct tcp_md5sig_key *key,
 struct inet_hashinfo tcp_hashinfo;
 EXPORT_SYMBOL(tcp_hashinfo);
 
-static  __u32 tcp_v4_init_sequence(const struct sk_buff *skb)
+static u32 tcp_v4_init_sequence(const struct sk_buff *skb, u32 *tsoff)
 {
 	return secure_tcp_sequence_number(ip_hdr(skb)->daddr,
 					  ip_hdr(skb)->saddr,
 					  tcp_hdr(skb)->dest,
-					  tcp_hdr(skb)->source);
+					  tcp_hdr(skb)->source, tsoff);
 }
 
 int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp)
@@ -148,6 +152,7 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	struct flowi4 *fl4;
 	struct rtable *rt;
 	int err;
+	u32 seq;
 	struct ip_options_rcu *inet_opt;
 
 	if (addr_len < sizeof(struct sockaddr_in))
@@ -235,11 +240,15 @@ int tcp_v4_connect(struct sock *sk, struct sockaddr *uaddr, int addr_len)
 	sk->sk_gso_type = SKB_GSO_TCPV4;
 	sk_setup_caps(sk, &rt->dst);
 
-	if (!tp->write_seq && likely(!tp->repair))
-		tp->write_seq = secure_tcp_sequence_number(inet->inet_saddr,
-							   inet->inet_daddr,
-							   inet->inet_sport,
-							   usin->sin_port);
+	if (likely(!tp->repair)) {
+		seq = secure_tcp_sequence_number(inet->inet_saddr,
+						 inet->inet_daddr,
+						 inet->inet_sport,
+						 usin->sin_port,
+						 &tp->tsoffset);
+		if (!tp->write_seq)
+			tp->write_seq = seq;
+	}
 
 	inet->inet_id = tp->write_seq ^ jiffies;
 
@@ -816,7 +825,7 @@ static void tcp_v4_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 	tcp_v4_send_ack(sock_net(sk), skb, seq,
 			tcp_rsk(req)->rcv_nxt,
 			req->rsk_rcv_wnd >> inet_rsk(req)->rcv_wscale,
-			tcp_time_stamp,
+			tcp_time_stamp + tcp_rsk(req)->ts_off,
 			req->ts_recent,
 			0,
 			tcp_md5_do_lookup(sk, (union tcp_md5_addr *)&ip_hdr(skb)->daddr,
@@ -1424,6 +1433,9 @@ int tcp_v4_do_rcv(struct sock *sk, struct sk_buff *skb)
 	return 0;
 
 reset:
+#ifdef CONFIG_GRKERNSEC_BLACKHOLE
+	if (!grsec_enable_blackhole)
+#endif
 	tcp_v4_send_reset(rsk, skb);
 discard:
 	kfree_skb(skb);
@@ -1604,12 +1616,19 @@ int tcp_v4_rcv(struct sk_buff *skb)
 
 lookup:
 	sk = __inet_lookup_skb(&tcp_hashinfo, skb, th->source, th->dest);
-	if (!sk)
+	if (!sk) {
+#ifdef CONFIG_GRKERNSEC_BLACKHOLE
+		ret = 1;
+#endif
 		goto no_tcp_socket;
-
+	}
 process:
-	if (sk->sk_state == TCP_TIME_WAIT)
+	if (sk->sk_state == TCP_TIME_WAIT) {
+#ifdef CONFIG_GRKERNSEC_BLACKHOLE
+		ret = 2;
+#endif
 		goto do_time_wait;
+	}
 
 	if (sk->sk_state == TCP_NEW_SYN_RECV) {
 		struct request_sock *req = inet_reqsk(sk);
@@ -1696,6 +1715,10 @@ csum_error:
 bad_packet:
 		TCP_INC_STATS_BH(net, TCP_MIB_INERRS);
 	} else {
+#ifdef CONFIG_GRKERNSEC_BLACKHOLE
+		if (!grsec_enable_blackhole || (ret == 1 &&
+		    (skb->dev->flags & IFF_LOOPBACK)))
+#endif
 		tcp_v4_send_reset(NULL, skb);
 	}
 
@@ -2421,7 +2444,7 @@ static void __net_exit tcp_sk_exit_batch(struct list_head *net_exit_list)
 	inet_twsk_purge(&tcp_hashinfo, &tcp_death_row, AF_INET);
 }
 
-static struct pernet_operations __net_initdata tcp_sk_ops = {
+static struct pernet_operations __net_initconst tcp_sk_ops = {
        .init	   = tcp_sk_init,
        .exit	   = tcp_sk_exit,
        .exit_batch = tcp_sk_exit_batch,

@@ -3469,7 +3469,7 @@ static struct attribute_group il3945_attribute_group = {
 	.attrs = il3945_sysfs_entries,
 };
 
-static struct ieee80211_ops il3945_mac_ops __read_mostly = {
+static struct ieee80211_ops il3945_mac_ops = {
 	.tx = il3945_mac_tx,
 	.start = il3945_mac_start,
 	.stop = il3945_mac_stop,
@@ -3633,7 +3633,9 @@ il3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	 */
 	if (il3945_mod_params.disable_hw_scan) {
 		D_INFO("Disabling hw_scan\n");
-		il3945_mac_ops.hw_scan = NULL;
+		pax_open_kernel();
+		const_cast(il3945_mac_ops.hw_scan) = NULL;
+		pax_close_kernel();
 	}
 
 	D_INFO("*** LOAD DRIVER ***\n");

@@ -615,7 +615,7 @@ struct r8152 {
 		int (*eee_get)(struct r8152 *, struct ethtool_eee *);
 		int (*eee_set)(struct r8152 *, struct ethtool_eee *);
 		bool (*in_nway)(struct r8152 *);
-	} rtl_ops;
+	} __no_const rtl_ops;
 
 	int intr_interval;
 	u32 saved_wolopts;
@@ -3060,10 +3060,8 @@ static int rtl8152_open(struct net_device *netdev)
 	netif_carrier_off(netdev);
 
 	res = usb_autopm_get_interface(tp->intf);
-	if (res < 0) {
-		free_all_mem(tp);
-		goto out;
-	}
+	if (res < 0)
+		goto out_free;
 
 	mutex_lock(&tp->control);
 
@@ -3082,15 +3080,20 @@ static int rtl8152_open(struct net_device *netdev)
 			netif_device_detach(tp->netdev);
 		netif_warn(tp, ifup, netdev, "intr_urb submit failed: %d\n",
 			   res);
-		free_all_mem(tp);
-	} else {
-		napi_enable(&tp->napi);
+		goto out_unlock;
 	}
+	napi_enable(&tp->napi);
 
 	mutex_unlock(&tp->control);
 
 	usb_autopm_put_interface(tp->intf);
+	return 0;
 
+out_unlock:
+	mutex_unlock(&tp->control);
+	usb_autopm_put_interface(tp->intf);
+out_free:
+	free_all_mem(tp);
 out:
 	return res;
 }
